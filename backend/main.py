@@ -1,15 +1,8 @@
-import os
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 
 from backend import dbcon, models, helpers
 
 app = Flask(__name__)
-app.config["ENV"] = os.getenv("FLASK_ENV", "development")
-app.config["DEBUG"] = app.config["ENV"] == "development"
-app.config["FRONTEND_ORIGIN"] = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
-
-CORS(app, supports_credentials=True, origins=app.config["FRONTEND_ORIGIN"])
 
 @app.route('/registeruser', methods=['POST'])
 def register_user():
@@ -24,7 +17,7 @@ def register_user():
     if (not password):
         return jsonify({'error': 'Password is empty'}), 400
     password = helpers.pass_hash.pass_hash(password)
-    user_insert = models.users(username=username, email=email, password=password)
+    user_insert = models.Users(username=username, email=email, password=password)
     try:
         db = next(dbcon.db_con())
         db.add(user_insert)
@@ -46,10 +39,10 @@ def login():
 
     try:
         db = next(dbcon.db_con())
-        user = db.query(models.users).filter_by(username=username).first()
-        if not user and not helpers.pass_hash.check_pass(user.password, password):
+        user = db.query(models.Users).filter_by(username=username).first()
+        if not user or not helpers.pass_hash.check_pass(user.password, password):
             return jsonify({'message': 'Invalid login'}), 401
-        else if user and helpers.pass_hash.check_pass(user.password, password):
+        elif user and helpers.pass_hash.check_pass(user.password, password):
             token = helpers.JWT_auth.token_gen(user.user_no)
             return jsonify({'message': 'Login successful', 'token': token,'user': {'id': user.user_no, 'username': user.username}}), 200
         else:
@@ -71,17 +64,19 @@ def book_search():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
         
         user_no = tok_data['user_no']
-        user = db.query(models.users).filter_by(user_no=user_no).first()
+        user = db.query(models.Users).filter_by(user_no=user_no).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 401
         word = request.args.get('word', '')
         if not word:
             return jsonify({'error': 'No search word provided'}), 400
         
-        book_list = db.query(models.books).filter(models.books.book_name.like(f'%{word}%')).all()
-        author_book_list = db.query(models.books).filter(models.books.author.like(f'%{word}%')).all()
+        book_list = db.query(models.Books).filter(models.Books.book_name.like(f'%{word}%')).all()
+        author_book_list = db.query(models.Books).filter(models.Books.author.like(f'%{word}%')).all()
 
         book_list_preap = []
         author_book_list_preap = []
@@ -89,22 +84,25 @@ def book_search():
 
         for i in book_list:
             book_list_preap.append({
-                'book_id': i.book_id,
-                'title': i.title,
+                'book_no': i.book_no,
+                'book_name': i.book_name,
                 'author': i.author,
-                'price_buy': i.price,
-                'price_rent': i.stock
+                'price_buy': i.price_buy,
+                'price_rent': i.price_rent
             })
         for j in author_book_list:
             author_book_list_preap.append({
-                'book_id': j.book_id,
-                'title': j.title,
+                'book_no': j.book_no,
+                'book_name': j.book_name,
                 'author': j.author,
-                'price_buy': j.price,
-                'price_rent': j.stock
+                'price_buy': j.price_buy,
+                'price_rent': j.price_rent
             })
         for i in author_book_list_preap:
             if i not in book_list_preap:
+                final_book_list.append(i)
+        for i in book_list_preap:
+            if i not in final_book_list:
                 final_book_list.append(i)
 
         return jsonify({'book_list': final_book_list}), 200
@@ -124,36 +122,41 @@ def create_add_order():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
         
         user_no = tok_data['user_no']
-        user = db.query(models.users).filter_by(user_no=user_no).first()
+        user = db.query(models.Users).filter_by(user_no=user_no).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 401
+
         bookdata = request.get_json() or {}
         book_no = bookdata.get('book_no')
         purchase_type = bookdata.get('purchase_type')
+
+        book_quantity = db.query(models.Books).filter_by(book_no=book_no).first()
+        no_available = book_quantity.no_available
+        if no_available <= 0:
+            return jsonify({'error': 'Book out of stock'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
     try:
-        current_order = db.query(models.orders).filter_by(user_no=user_no).first()
+        current_order = db.query(models.Orders).filter_by(user_no=user_no, payment_status = 1).first()
         if not current_order:
-            new_order = models.orders(user_no=user_no)
+            new_order = models.Orders(user_no=user_no, status=0, payment_status=1)
             db.add(new_order)
             db.commit()
             order_no = new_order.order_no
         else:
             order_no = current_order.order_no
-        book_quantity = db.query(models.books).filter_by(book_no=book_no).first()
-        no_available = book_quantity.no_available
-        if no_available <= 0:
-            return jsonify({'error': 'Book out of stock'}), 400
+
         if purchase_type == 1:
             price = book_quantity.price_buy
         elif purchase_type == 2:
             price = book_quantity.price_rent
     
-        order_details_insert = db.add(models.order_details(order_no=order_no, book_no=book_no, purchase_type=purchase_type, price=price))
+        db.add(models.Order_details(order_no=order_no, book_no=book_no, purchase_type=purchase_type, price=price))
         book_quantity.no_available = no_available - 1
         db.commit()
         return jsonify({'message': 'Order detail added successfully', 'order_no': order_no}), 201
@@ -172,29 +175,31 @@ def order_checkout():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
         user_no = tok_data['user_no']
-        current_order = db.query(models.orders).filter_by(user_no=user_no).first()
+        current_order = db.query(models.Orders).filter_by(user_no=user_no,payment_status=0).first()
         if not current_order:
             return jsonify({'error': 'Cart is empty'}), 400
 
         book_list = []
         total_price = 0
-        for book in db.query(models.order_details).filter_by(order_no=current_order.order_no).all():
-            title = db.query(models.books).filter_by(book_no=book.book_no).first().title
-            book_list.append(title)
+        for book in db.query(models.Order_details).filter_by(order_no=current_order.order_no).all():
+            book_name = db.query(models.Books).filter_by(book_no=book.book_no).first().book_name
+            purchase_type = 'Buy' if book.purchase_type == 1 else 'Rent'
+            book_list.append(f"{book_name} ({purchase_type})")
             total_price += book.price
         current_order.tot_price = total_price
-        current_order.payment_status = 1
+        current_order.payment_status = 2
+        user = db.query(models.Users).filter_by(user_no=user_no).first()
         db.commit()
+        helpers.email_helper.send_email(user.email, current_order.order_no, total_price, book_list)
         return jsonify({'message': 'Order completed!', 'total_price': str(total_price)}), 200
 
     except Exception as e:
         db.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
-        helpers.email_helper.send_email(user.email, current_order.order_no, total_price, book_list)
         db.close()
 
 
@@ -208,7 +213,7 @@ def manager_login():
 
     try:
         db = next(dbcon.db_con())
-        manager = db.query(models.users).filter_by(username=username).first()
+        manager = db.query(models.Users).filter_by(username=username).first()
         if not manager or not helpers.pass_hash.check_pass(manager.password, password):
             return jsonify({'message': 'Invalid login'}), 401
         if manager.role != 1:
@@ -229,15 +234,17 @@ def view_all_orders():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
         
         manager_no = tok_data['user_no']
-        manager = db.query(models.users).filter_by(user_no=manager_no).first()
+        manager = db.query(models.Users).filter_by(user_no=manager_no).first()
+        if not manager:
+            return jsonify({'error': 'Manager not found'}), 401
         if manager.role != 1:
             return jsonify({'error': 'Unauthorized access'}), 403
 
-        orders = db.query(models.orders).all()
+        orders = db.query(models.Orders).all()
         all_orders = []
         for order in orders:
             if order.status == 1:
@@ -270,11 +277,13 @@ def update_payment():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
         
         manager_no = tok_data['user_no']
-        manager = db.query(models.users).filter_by(user_no=manager_no).first()
+        manager = db.query(models.Users).filter_by(user_no=manager_no).first()
+        if not manager:
+            return jsonify({'error': 'Manager not found'}), 401
         if manager.role != 1:
             return jsonify({'error': 'Not a manager!'}), 403
 
@@ -283,7 +292,7 @@ def update_payment():
         if not order_no:
             return jsonify({'error': 'Must provide order number'}), 400
 
-        order = db.query(models.orders).filter_by(order_no=order_no).first()
+        order = db.query(models.Orders).filter_by(order_no=order_no).first()
         if not order:
             return jsonify({'error': 'Order does not exist'}), 404
 
@@ -305,18 +314,20 @@ def add_new_book():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
         
         manager_no = tok_data['user_no']
-        manager = db.query(models.users).filter_by(user_no=manager_no).first()
+        manager = db.query(models.Users).filter_by(user_no=manager_no).first()
+        if not manager:
+            return jsonify({'error': 'Manager not found'}), 401
         if manager.role != 1:
             return jsonify({'error': 'Not a manager!'}), 403
 
         bookdata = request.get_json() or {}
-        title = bookdata.get('title')
-        if not title:
-            return jsonify({'error': 'Title is required'}), 400
+        book_name = bookdata.get('book_name')
+        if not book_name:
+            return jsonify({'error': 'book_name is required'}), 400
         author = bookdata.get('author')
         if not author:
             return jsonify({'error': 'Author is required'}), 400
@@ -326,11 +337,11 @@ def add_new_book():
         price_rent = bookdata.get('price_rent')
         if price_rent is None:
             return jsonify({'error': 'Rent price is required'}), 400
-        stock = bookdata.get('stock')
+        stock = bookdata.get('no_available')
         if stock is None:
             return jsonify({'error': 'Stock is required'}), 400
 
-        new_book = models.books(title=title, author=author, price_buy=price_buy, price_rent=price_rent, stock=stock, no_available=stock)
+        new_book = models.Books(book_name=book_name, author=author, price_buy=price_buy, price_rent=price_rent, no_available=stock)
         db.add(new_book)
         db.commit()
         return jsonify({'message': 'New book added successfully', 'book_no': new_book.book_no}), 201
@@ -349,11 +360,13 @@ def update_book_info():
             return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
-        if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
-            return jsonify({'error': tok_data}), 401
-        
+        if "error" in tok_data:
+            return jsonify({'error': tok_data['error']}), 401
+
         manager_no = tok_data['user_no']
-        manager = db.query(models.users).filter_by(user_no=manager_no).first()
+        manager = db.query(models.Users).filter_by(user_no=manager_no).first()
+        if not manager:
+            return jsonify({'error': 'Manager not found'}), 401
         if manager.role != 1:
             return jsonify({'error': 'Not a manager!'}), 403
 
@@ -362,13 +375,13 @@ def update_book_info():
         if not book_no:
             return jsonify({'error': 'Book number is required'}), 400
 
-        book = db.query(models.books).filter_by(book_no=book_no).first()
+        book = db.query(models.Books).filter_by(book_no=book_no).first()
         if not book:
             return jsonify({'error': 'Book does not exist'}), 404
 
-        title = bookdata.get('title')
-        if not title:
-            return jsonify({'error': 'Title is required'}), 400
+        book_name = bookdata.get('book_name')
+        if not book_name:
+            return jsonify({'error': 'book_name is required'}), 400
         author = bookdata.get('author')
         if not author:
             return jsonify({'error': 'Author is required'}), 400
@@ -378,11 +391,11 @@ def update_book_info():
         price_rent = bookdata.get('price_rent')
         if price_rent is None:
             return jsonify({'error': 'Rent price is required'}), 400
-        stock = bookdata.get('stock')
+        stock = bookdata.get('no_available')
         if stock is None:
             return jsonify({'error': 'Stock is required'}), 400
 
-        book.title = title
+        book.book_name = book_name
         book.author = author
         book.price_buy = price_buy
         book.price_rent = price_rent
@@ -397,4 +410,4 @@ def update_book_info():
         db.close()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    app.run(debug=True)

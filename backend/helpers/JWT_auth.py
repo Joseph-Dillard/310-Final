@@ -11,11 +11,13 @@ def token_gen(user_no):
     return token
 
 def tok_ver(token):
+    if token.startswith('Bearer '):
+        token = token[7:]
     try:
         payload = jwt.decode(token, secret, algorithms=['HS256'])
         return payload
     except ExpiredSignatureError:
-        return "Session expired. login again."
+        return {"error": "expired session"}
     except InvalidTokenError:
-        return "Invalid token. login again."
+        return {"error": "Invalid token. login again."}
     
