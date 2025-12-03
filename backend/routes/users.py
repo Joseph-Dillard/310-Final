@@ -4,7 +4,7 @@ from backend import dbcon, models, helpers
 
 app = Flask(__name__)
 
-@app.route('/registeruser', methods=['POST'])
+@app.route('/users/register', methods=['POST'])
 def register_user():
     logindata = request.get_json() or {}
     username = logindata.get('username')
@@ -29,7 +29,7 @@ def register_user():
     finally:
         db.close()
 
-@app.route('/loginuser', methods=['POST'])
+@app.route('/users/login', methods=['POST'])
 def login():
     logindata = request.get_json()
     username = logindata.get('username')
@@ -42,6 +42,8 @@ def login():
         user = db.query(models.Users).filter_by(username=username).first()
         if not user and not helpers.pass_hash.check_pass(user.password, password):
             return jsonify({'message': 'Invalid login'}), 401
+        else if user.role == 1:
+            return jsonify({'error': 'Unauthorized access. Managers have a different login'}), 403
         else if user and helpers.pass_hash.check_pass(user.password, password):
             token = helpers.JWT_auth.token_gen(user.user_no)
             return jsonify({'message': 'Login successful', 'token': token,'user': {'id': user.user_no, 'username': user.username}}), 200

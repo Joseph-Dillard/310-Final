@@ -4,14 +4,14 @@ from backend import dbcon, models, helpers
 
 app = Flask(__name__)
 
-@app.route('/order_create_add', methods=['POST'])
+@app.route('/orders/create_add', methods=['POST'])
 def create_add_order():
     db = next(dbcon.db_con())
 
     try:
         token = request.headers.get('Authorization')
         if not token:
-            return jsonify({'error': 'No JWT'}), 401
+            return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
         if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
@@ -59,7 +59,7 @@ def order_checkout():
     try:
         token = request.headers.get('Authorization')
         if not token:
-            return jsonify({'error': 'No JWT'}), 401
+            return jsonify({'error': 'No token for authorization'}), 401
         
         tok_data = helpers.JWT_auth.tok_ver(token)
         if tok_data == "Session expired. login again." or tok_data == "Invalid token. login again.":
