@@ -2,8 +2,6 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from backend import dbcon, models, helpers
 
-app = Flask(__name__)
-
 @app.route('/orders/create_add', methods=['POST'])
 def create_add_order():
     db = next(dbcon.db_con())
@@ -18,7 +16,7 @@ def create_add_order():
             return jsonify({'error': tok_data}), 401
         
         user_no = tok_data['user_no']
-        user = db.query(models.Users).filter_by(user_no=user_no).first()
+        user = db.query(models.users).filter_by(user_no=user_no).first()
         bookdata = request.get_json() or {}
         book_no = bookdata.get('book_no')
         purchase_type = bookdata.get('purchase_type')

@@ -2,9 +2,7 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from backend import dbcon, models, helpers
 
-app = Flask(__name__)
-
-@app.route('/users/register', methods=['POST'])
+@app.route('/registeruser', methods=['POST'])
 def register_user():
     logindata = request.get_json() or {}
     username = logindata.get('username')
@@ -17,7 +15,7 @@ def register_user():
     if (not password):
         return jsonify({'error': 'Password is empty'}), 400
     password = helpers.pass_hash.pass_hash(password)
-    user_insert = models.Users(username=username, email=email, password=password)
+    user_insert = momodels.userssername=username, email=email, password=password)
     try:
         db = next(dbcon.db_con())
         db.add(user_insert)
@@ -29,7 +27,7 @@ def register_user():
     finally:
         db.close()
 
-@app.route('/users/login', methods=['POST'])
+@app.route('/loginuser', methods=['POST'])
 def login():
     logindata = request.get_json()
     username = logindata.get('username')
@@ -39,11 +37,9 @@ def login():
 
     try:
         db = next(dbcon.db_con())
-        user = db.query(models.Users).filter_by(username=username).first()
+        user = db.query(modemodels.userslter_by(username=username).first()
         if not user and not helpers.pass_hash.check_pass(user.password, password):
             return jsonify({'message': 'Invalid login'}), 401
-        else if user.role == 1:
-            return jsonify({'error': 'Unauthorized access. Managers have a different login'}), 403
         else if user and helpers.pass_hash.check_pass(user.password, password):
             token = helpers.JWT_auth.token_gen(user.user_no)
             return jsonify({'message': 'Login successful', 'token': token,'user': {'id': user.user_no, 'username': user.username}}), 200

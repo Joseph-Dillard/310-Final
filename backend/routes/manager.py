@@ -2,8 +2,6 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from backend import dbcon, models, helpers
 
-app = Flask(__name__)
-
 @app.route('/manager/login', methods=['POST'])
 def manager_login():
     logindata = request.get_json() or {}

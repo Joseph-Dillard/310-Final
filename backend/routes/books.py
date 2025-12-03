@@ -2,8 +2,6 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from backend import dbcon, models, helpers
 
-app = Flask(__name__)
-
 @app.route('/books/search', methods=['GET'])
 def book_search():
     db = next(dbcon.db_con())
@@ -18,7 +16,7 @@ def book_search():
             return jsonify({'error': tok_data}), 401
         
         user_no = tok_data['user_no']
-        user = db.query(models.Users).filter_by(user_no=user_no).first()
+        user = db.query(models.users).filter_by(user_no=user_no).first()
         word = request.args.get('word', '')
         if not word:
             return jsonify({'error': 'No search word provided'}), 400
