@@ -69,7 +69,11 @@ def order_checkout():
         if not current_order:
             return jsonify({'error': 'Cart is empty'}), 400
 
+        book_list = []
+        total_price = 0
         for book in db.query(models.order_details).filter_by(order_no=current_order.order_no).all():
+            title = db.query(models.books).filter_by(book_no=book.book_no).first().title
+            book_list.append(title)
             total_price += book.price
         current_order.tot_price = total_price
         current_order.payment_status = 1
@@ -80,7 +84,7 @@ def order_checkout():
         db.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
-        helpers.email_helper.send_order_email(user.email, current_order.order_no, total_price)
+        helpers.email_helper.send_email(user.email, current_order.order_no, total_price, book_list)
         db.close()
 
 
