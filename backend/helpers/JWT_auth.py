@@ -3,10 +3,9 @@ from jwt import ExpiredSignatureError, InvalidTokenError
 
 secret = 'secretkey'
 
-def token_gen(user_no, role):
+def token_gen(user_no):
     payload = {
         'user_no': user_no,
-        'role': role
     }
     token = jwt.encode(payload, secret, algorithm='HS256')
     return token
@@ -17,4 +16,6 @@ def tok_ver(token):
         return payload
     except ExpiredSignatureError:
         return "Session expired. login again."
+    except InvalidTokenError:
+        return "Invalid token. login again."
     
