@@ -18,11 +18,8 @@ def book_search():
             return jsonify({'error': tok_data}), 401
         
         user_no = tok_data['user_no']
-
         user = db.query(models.Users).filter_by(user_no=user_no).first()
-
         word = request.args.get('word', '')
-
         if not word:
             return jsonify({'error': 'No search word provided'}), 400
         

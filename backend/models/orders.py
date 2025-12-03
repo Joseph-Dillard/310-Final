@@ -9,4 +9,4 @@ class Orders(Base):
     user_no = Column(Integer, foreignkey=True, nullable=False)
     status = Column(Integer, nullable=True)
     tot_price = Column(DECIMAL(10,2), nullable=True)
-    is_admin = Column(Boolean, nullable=False, default=False)
+    payment_status = Column(Integer, nullable=True)
