@@ -1,6 +1,5 @@
 import threading
-import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 
 import frontend.api_con as api
 
