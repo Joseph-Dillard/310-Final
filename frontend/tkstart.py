@@ -1,4 +1,4 @@
-from frontend.ui import App
+from frontend.screens import App
 
 
 def main():

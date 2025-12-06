@@ -3,10 +3,10 @@ import queue
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from .start import StartPage
-from .auth import UserLoginPage, RegisterPage, ManagerLoginPage
-from .catalog import CatalogPage, CartPage
-from .manager import ManagerDashboard
+from .startpg import StartPage
+from .authentication import UserLoginPage, RegisterPage, ManagerLoginPage
+from .bookcatalog import CatalogPage, CartPage
+from .manscreen import ManagerDashboard
 
 
 class App(tk.Tk):
