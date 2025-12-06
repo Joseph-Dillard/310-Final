@@ -40,13 +40,18 @@ def login():
     try:
         db = next(dbcon.db_con())
         user = db.query(models.Users).filter_by(username=username).first()
-        if not user or not helpers.pass_hash.check_pass(user.password, password):
+        if not user:
             return jsonify({'message': 'Invalid login'}), 401
-        elif user and helpers.pass_hash.check_pass(user.password, password):
-            token = helpers.JWT_auth.token_gen(user.user_no)
-            return jsonify({'message': 'Login successful', 'token': token,'user': {'id': user.user_no, 'username': user.username}}), 200
-        else:
-            return jsonify({'error': 'Invalid login'}), 401
+        try:
+            valid = helpers.pass_hash.check_pass(user.password, password)
+        except Exception as e:
+            app.logger.exception("Password verification failed")
+            return jsonify({'error': 'Password verification error', 'details': str(e)}), 500
+
+        if not valid:
+            return jsonify({'message': 'Invalid login'}), 401
+        token = helpers.JWT_auth.token_gen(user.user_no)
+        return jsonify({'message': 'Login successful', 'token': token,'user': {'id': user.user_no, 'username': user.username}}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
@@ -71,10 +76,21 @@ def book_search():
         user = db.query(models.Users).filter_by(user_no=user_no).first()
         if not user:
             return jsonify({'error': 'User not found'}), 401
-        word = request.args.get('word', '')
+        word = request.args.get('word')
         if not word:
-            return jsonify({'error': 'No search word provided'}), 400
-        
+            book_objs = db.query(models.Books).all()
+            final_book_list = []
+            for i in book_objs:
+                final_book_list.append({
+                    'book_no': i.book_no,
+                    'book_name': i.book_name,
+                    'author': i.author,
+                    'no_available': i.no_available,
+                    'price_buy': i.price_buy,
+                    'price_rent': i.price_rent
+                })
+            return jsonify({'book_list': final_book_list}), 200
+
         book_list = db.query(models.Books).filter(models.Books.book_name.like(f'%{word}%')).all()
         author_book_list = db.query(models.Books).filter(models.Books.author.like(f'%{word}%')).all()
 
@@ -87,6 +103,7 @@ def book_search():
                 'book_no': i.book_no,
                 'book_name': i.book_name,
                 'author': i.author,
+                'no_available': i.no_available,
                 'price_buy': i.price_buy,
                 'price_rent': i.price_rent
             })
@@ -95,6 +112,7 @@ def book_search():
                 'book_no': j.book_no,
                 'book_name': j.book_name,
                 'author': j.author,
+                'no_available': j.no_available,
                 'price_buy': j.price_buy,
                 'price_rent': j.price_rent
             })
@@ -142,9 +160,9 @@ def create_add_order():
         return jsonify({'error': str(e)}), 500
     
     try:
-        current_order = db.query(models.Orders).filter_by(user_no=user_no, payment_status = 1).first()
+        current_order = db.query(models.Orders).filter_by(user_no=user_no, payment_status=0).first()
         if not current_order:
-            new_order = models.Orders(user_no=user_no, status=0, payment_status=1)
+            new_order = models.Orders(user_no=user_no, status=0, payment_status=0)
             db.add(new_order)
             db.commit()
             order_no = new_order.order_no
@@ -178,7 +196,7 @@ def order_checkout():
         if "error" in tok_data:
             return jsonify({'error': tok_data['error']}), 401
         user_no = tok_data['user_no']
-        current_order = db.query(models.Orders).filter_by(user_no=user_no,payment_status=0).first()
+        current_order = db.query(models.Orders).filter_by(user_no=user_no, payment_status=0).first()
         if not current_order:
             return jsonify({'error': 'Cart is empty'}), 400
 
@@ -190,7 +208,7 @@ def order_checkout():
             book_list.append(f"{book_name} ({purchase_type})")
             total_price += book.price
         current_order.tot_price = total_price
-        current_order.payment_status = 2
+        current_order.payment_status = 1
         user = db.query(models.Users).filter_by(user_no=user_no).first()
         db.commit()
         helpers.email_helper.send_email(user.email, current_order.order_no, total_price, book_list)
@@ -214,7 +232,14 @@ def manager_login():
     try:
         db = next(dbcon.db_con())
         manager = db.query(models.Users).filter_by(username=username).first()
-        if not manager or not helpers.pass_hash.check_pass(manager.password, password):
+        if not manager:
+            return jsonify({'message': 'Invalid login'}), 401
+        try:
+            valid = helpers.pass_hash.check_pass(manager.password, password)
+        except Exception as e:
+            app.logger.exception("Manager password verification failed")
+            return jsonify({'error': 'Password verification error', 'details': str(e)}), 500
+        if not valid:
             return jsonify({'message': 'Invalid login'}), 401
         if manager.role != 1:
             return jsonify({'error': 'Unauthorized access. Managers only!'}), 403
@@ -247,18 +272,15 @@ def view_all_orders():
         orders = db.query(models.Orders).all()
         all_orders = []
         for order in orders:
-            if order.status == 1:
-                status_str = 'Buy'
-            else:
-                status_str = 'Rent'
-            if order.payment_status == 1:
+            if order.payment_status == 0:
+                payment_status_str = 'Cart'
+            elif order.payment_status == 1:
                 payment_status_str = 'Pending'
             else:
                 payment_status_str = 'Paid'
             all_orders.append({
                 'order_no': order.order_no,
                 'user_no': order.user_no,
-                'status': status_str,
                 'tot_price': str(order.tot_price),
                 'payment_status': payment_status_str
             })
