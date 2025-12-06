@@ -1,3 +1,3 @@
 to run front end
-'python frontend\tk_client.py'
+'python -m frontend\tk_client.py'
 
